@@ -329,13 +329,14 @@ local Config = {
     SummonCount = "10x", -- "1x", "10x"
     SummonDelay = 1.5,
 
-    -- In-Game Automation (Replay / Next / Voting Start / Autoplay / Ultimate / Defend)
+    -- In-Game Automation (Replay / Next / Voting Start / Autoplay / Ultimate / Defend / Fate Sword)
     AutoVoteStart = true,
     AutoRetry = true,
     AutoNext = true,
     AutoAutoplay = true,
     AutoUltimateSkill = true,
     AutoDefendMoneyUnits = true,
+    AutoSolveFateSword = true,
 
     -- System & UI Settings
     AntiAfkActive = true,
@@ -1314,23 +1315,49 @@ function Strix.Battle.SyncSettings()
 end
 
 function Strix.Battle.HandleRuntimeVoteStart()
-    -- 1. Direct Remote Event
-    pcall(function()
-        VoteStartRequest:FireServer()
-    end)
+    -- Guard 1: Do not vote if game already started or player already voted
+    if LocalPlayer and (LocalPlayer:GetAttribute("GameStarted") == true or LocalPlayer:GetAttribute("HasVotedStart") == true) then
+        return
+    end
 
-    -- 2. Click in-game VoteButton if frame is displayed
-    pcall(function()
-        local mainGui = LocalPlayer and LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("Main")
-        if mainGui then
-            local voteFrame = mainGui:FindFirstChild("VoteStartFrame")
-            if voteFrame and voteFrame.Visible then
-                local voteBtn = voteFrame:FindFirstChild("VoteButton")
-                if voteBtn and voteBtn:IsA("GuiButton") and voteBtn.Visible then
-                    firesignal(voteBtn.MouseButton1Click)
-                end
-            end
+    -- Guard 2: Never fire vote start if Sword Event or Skip Wave is active
+    if workspace:GetAttribute("SwordEventActive") == true or workspace:GetAttribute("SkipWaveActive") == true then
+        return
+    end
+
+    -- Guard 3: If wave is running (> 0), match is already started
+    local currentWave = workspace:GetAttribute("CurrentWave")
+    if currentWave and tonumber(currentWave) and tonumber(currentWave) > 0 then
+        return
+    end
+
+    -- Guard 4: Inspect VoteStartFrame context
+    local mainGui = LocalPlayer and LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("Main")
+    local voteFrame = mainGui and mainGui:FindFirstChild("VoteStartFrame")
+    if voteFrame and voteFrame.Visible then
+        local header = voteFrame:FindFirstChild("Header")
+        local headerText = header and header:IsA("TextLabel") and header.Text or ""
+        -- If it's the sword event or skip wave frame, DO NOT TOUCH!
+        if string.find(headerText, "ภารกิจ") or string.find(headerText, "ดาบ") or string.find(headerText, "Skip") then
+            return
         end
+
+        local voteBtn = voteFrame:FindFirstChild("VoteButton")
+        if voteBtn and voteBtn:IsA("GuiButton") and voteBtn.Visible and voteBtn.Interactable then
+            pcall(function()
+                if firesignal then
+                    firesignal(voteBtn.MouseButton1Click)
+                else
+                    for _, c in ipairs(getconnections(voteBtn.MouseButton1Click)) do c:Fire() end
+                end
+            end)
+            return
+        end
+    end
+
+    -- Guard 5: Only fire remote once before game starts
+    pcall(function()
+        VoteStartRequest:FireServer(LocalPlayer)
     end)
 end
 
@@ -1432,6 +1459,138 @@ function Strix.Battle.HandleAutoDefendMoneyUnits()
 
             toggleRemote:FireServer(unit)
         end
+    end)
+end
+
+-- ------------------------------------------------------------------------------
+-- Fate (Event) Mystery Sword Automation (No ESP, Stable E-Hold Interaction)
+-- ------------------------------------------------------------------------------
+local isSolvingSwordEvent = false
+
+local function CleanAllSwordESP()
+    for _, d in ipairs(workspace:GetDescendants()) do
+        if d.Name == "STRIX_SWORD_ESP" then
+            pcall(function() d:Destroy() end)
+        end
+    end
+end
+
+function Strix.Battle.SolveFateSwordEvent()
+    if isSolvingSwordEvent then return end
+    if not (workspace:GetAttribute("SwordEventActive") == true) then return end
+
+    isSolvingSwordEvent = true
+    task.spawn(function()
+        pcall(function()
+            local char = LocalPlayer and LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if not hrp then
+                isSolvingSwordEvent = false
+                return
+            end
+
+            local originalCFrame = hrp.CFrame
+
+            -- 1. Gather all candidates with SwordPrompt
+            local candidates = {}
+            local fe = workspace:FindFirstChild("FateEvent")
+            local fencesFolder = fe and fe:FindFirstChild("Map") and fe.Map:FindFirstChild("Fences")
+            local fences = fencesFolder and fencesFolder:GetChildren() or {}
+
+            for _, f in ipairs(fences) do
+                local prompt = f:FindFirstChildWhichIsA("ProximityPrompt") or f:FindFirstChild("SwordPrompt")
+                if prompt and prompt.Enabled then
+                    local fPos = f:IsA("BasePart") and f.Position or (f:IsA("Model") and f:GetPivot().Position) or Vector3.zero
+                    table.insert(candidates, { fence = f, prompt = prompt, pos = fPos })
+                end
+            end
+
+            if #candidates == 0 then
+                for _, d in ipairs(workspace:GetDescendants()) do
+                    if d:IsA("ProximityPrompt") and (d.Name == "SwordPrompt" or string.find(string.lower(d.ActionText or ""), "ดาบ") or string.find(string.lower(d.ObjectText or ""), "ดาบ")) then
+                        if d.Enabled and d.Parent and d.Parent:IsA("BasePart") then
+                            table.insert(candidates, { fence = d.Parent, prompt = d, pos = d.Parent.Position })
+                        end
+                    end
+                end
+            end
+
+            if #candidates == 0 then
+                isSolvingSwordEvent = false
+                return
+            end
+
+            -- Sort candidates by distance from player to interact with closest arena swords first
+            local playerPos = hrp.Position
+            table.sort(candidates, function(a, b)
+                return (a.pos - playerPos).Magnitude < (b.pos - playerPos).Magnitude
+            end)
+
+            -- 2. Interact with candidates with stable server-sync timing (ensures E registers properly)
+            local lastPresses = workspace:GetAttribute("SwordEventPresses") or 0
+            local requiredPresses = workspace:GetAttribute("SwordEventRequired") or 2
+
+            for _, item in ipairs(candidates) do
+                if not (workspace:GetAttribute("SwordEventActive") == true) then
+                    break
+                end
+                local currentPresses = workspace:GetAttribute("SwordEventPresses") or 0
+                if currentPresses >= requiredPresses then
+                    break
+                end
+
+                local prompt = item.prompt
+                local fencePos = item.pos
+
+                -- Position character cleanly at sword
+                pcall(function()
+                    hrp.CFrame = CFrame.new(fencePos + Vector3.new(0, 1.5, 0))
+                end)
+
+                -- Give position replication enough time to register on server before prompt activation
+                task.wait(0.12)
+
+                -- Prepare prompt properties for reliable firing
+                pcall(function()
+                    prompt.HoldDuration = 0
+                    prompt.RequiresLineOfSight = false
+                    prompt.MaxActivationDistance = 35
+                end)
+
+                -- Trigger interaction
+                pcall(function()
+                    if fireproximityprompt then
+                        fireproximityprompt(prompt, 0)
+                    else
+                        for _, c in ipairs(getconnections(prompt.Triggered)) do
+                            c:Fire()
+                        end
+                    end
+                end)
+
+                -- Give server ample time to accept E press and process the sword check
+                task.wait(0.20)
+
+                -- Check if this sword counted as a correct one
+                local updatedPresses = workspace:GetAttribute("SwordEventPresses") or 0
+                if updatedPresses > lastPresses then
+                    lastPresses = updatedPresses
+                    -- Allow brief cooldown for server state transition before next sword
+                    task.wait(0.35)
+                    if updatedPresses >= requiredPresses then
+                        break
+                    end
+                end
+            end
+
+            -- 3. Teleport back to original position
+            pcall(function()
+                if hrp and originalCFrame then
+                    hrp.CFrame = originalCFrame
+                end
+            end)
+        end)
+        isSolvingSwordEvent = false
     end)
 end
 
@@ -1653,7 +1812,7 @@ task.spawn(function()
             Strix.Battle.SyncSettings()
 
             -- Runtime Battle Invocations
-            if Config.AutoVoteStart then
+            if Config.AutoVoteStart and not workspace:GetAttribute("SwordEventActive") then
                 Strix.Battle.HandleRuntimeVoteStart()
             end
             if Config.AutoAutoplay then
@@ -1670,6 +1829,12 @@ task.spawn(function()
                 Strix.Battle.HandleAutoDefendMoneyUnits()
             end
 
+            -- Auto Solve Fate Event Mystery Swords
+            if Config.AutoSolveFateSword and workspace:GetAttribute("SwordEventActive") then
+                Strix.Battle.SolveFateSwordEvent()
+            end
+            pcall(CleanAllSwordESP)
+
             -- Auto Leave When Challenge Reset (xx:00 & xx:30)
             if Config.AutoLeaveOnChallengeReset then
                 Strix.Challenges.CheckChallengeResetLeave()
@@ -1682,6 +1847,18 @@ task.spawn(function()
         end)
         task.wait(0.5)
     end
+end)
+
+-- Immediate Listener for Fate Sword Event
+pcall(function()
+    workspace:GetAttributeChangedSignal("SwordEventActive"):Connect(function()
+        if Config.AutoSolveFateSword and workspace:GetAttribute("SwordEventActive") then
+            task.spawn(function()
+                Strix.Battle.SolveFateSwordEvent()
+            end)
+        end
+        pcall(CleanAllSwordESP)
+    end)
 end)
 
 -- 4. Progression Rewards & Codes Worker Loop
@@ -1767,6 +1944,7 @@ local function ApplyConfigToUI()
         { "AutoAutoplay", nil, true },
         { "AutoUltimateSkill", nil, true },
         { "AutoDefendMoneyUnits", nil, true },
+        { "AutoSolveFateSword", nil, true },
         { "AutoRedeemCodes", nil },
         { "AutoClaimLevelRewards", nil },
         { "AutoClaimUnitIndex", nil },
@@ -2959,6 +3137,22 @@ UIControls.AutoDefendMoneyUnits = GameLeft:Toggle({
         RequestSaveConfig()
     end
 }, "Toggle_AutoDefendMoneyUnits")
+
+UIControls.AutoSolveFateSword = GameLeft:Toggle({
+    Name = "Auto Fate Swords",
+    Default = (Config.AutoSolveFateSword ~= false),
+    Callback = function(v)
+        Config.AutoSolveFateSword = v
+        RequestSaveConfig()
+    end
+}, "Toggle_AutoSolveFateSword")
+
+GameLeft:Button({
+    Name = "Solve Fate Swords Now",
+    Callback = function()
+        Strix.Battle.SolveFateSwordEvent()
+    end
+}, "Btn_SolveFateSwordsNow")
 
 -- ------------------------------------------------------------------------------
 -- TAB 4: REWARDS & CODES

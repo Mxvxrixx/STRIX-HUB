@@ -3292,12 +3292,14 @@ SetRight:Header({ Text = "Hub Management" })
 SetRight:Button({
     Name = "Unload STRIX HUB",
     Callback = function()
-        Strix.Engine.Cleanup()
-        if Window and Window.Unload then
-            Window:Unload()
-        end
+        pcall(function()
+            Strix.Engine.Cleanup()
+            if Window and Window.Unload then
+                Window:Unload()
+            end
+        end)
     end
-}, "Btn_UnloadHub")
+})
 
 -- ==============================================================================
 -- 9. INITIALIZE & APPLY CONFIG TO UI

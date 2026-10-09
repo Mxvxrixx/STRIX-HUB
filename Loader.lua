@@ -6,6 +6,17 @@ if not game:IsLoaded() then
     game.Loaded:Wait()
 end
 
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+if not LocalPlayer then
+    repeat task.wait(0.1) until Players.LocalPlayer
+    LocalPlayer = Players.LocalPlayer
+end
+
+if not LocalPlayer:FindFirstChild("PlayerGui") then
+    LocalPlayer:WaitForChild("PlayerGui", 20)
+end
+
 local StarterGui = game:GetService("StarterGui")
 
 local function Notify(title, text, duration)

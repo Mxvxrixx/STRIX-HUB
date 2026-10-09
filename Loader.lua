@@ -1,26 +1,11 @@
 -- ==============================================================================
 --  STRIX HUB - Universal Multi-Game Loader
 -- ==============================================================================
-
--- 1. Wait for game, character, and UI to fully load
+task.wait(5) 
+-- 1. Wait for game to fully load
 if not game:IsLoaded() then
     game.Loaded:Wait()
 end
-
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer or Players:GetPropertyChangedSignal("LocalPlayer"):Wait() or Players.PlayerAdded:Wait()
-
--- รอให้ตัวละคร (Character) และ RootPart โหลดเสร็จ
-local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-if character then
-    character:WaitForChild("HumanoidRootPart", 10)
-end
-
--- รอให้หน้าจอ / UI (PlayerGui) โหลดเสร็จ
-LocalPlayer:WaitForChild("PlayerGui", 10)
-
--- หน่วงเวลาเผื่อให้โมเดลและ Object ในเกมเรนเดอร์ครบถ้วน
-task.wait(1)
 
 local StarterGui = game:GetService("StarterGui")
 

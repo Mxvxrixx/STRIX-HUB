@@ -81,10 +81,15 @@ end
 -- Remotes & Networking (Safe non-blocking lookups)
 local Remotes = ReplicatedStorage:FindFirstChild("Remotes") or ReplicatedStorage:WaitForChild("Remotes", 3)
 local function SafeGetRemote(name)
+    if not Remotes then
+        Remotes = ReplicatedStorage:FindFirstChild("Remotes")
+    end
     if not Remotes then return nil end
     local r = Remotes:FindFirstChild(name)
-    if not r and not isBattlePlace then
-        r = Remotes:WaitForChild(name, 0.5)
+    if not r then
+        pcall(function()
+            r = Remotes:WaitForChild(name, 1)
+        end)
     end
     return r
 end
@@ -104,6 +109,8 @@ local GetBannerInfo = SafeGetRemote("GetBannerInfo")
 local VoteStartRequest = SafeGetRemote("VoteStartRequest")
 local ToggleAutoplay = SafeGetRemote("ToggleAutoplay")
 local SpawnUnitRequest = SafeGetRemote("SpawnUnitRequest")
+local UnitCooldownStart = SafeGetRemote("UnitCooldownStart")
+local ResetUnitUIEvent = SafeGetRemote("ResetUnitUIEvent")
 local UpdateSetting = SafeGetRemote("UpdateSetting")
 
 -- Game Events (Safe non-blocking lookups)
@@ -114,8 +121,10 @@ local function SafeGetGameEvent(name)
     end
     if not GameEvents then return nil end
     local r = GameEvents:FindFirstChild(name)
-    if not r and not isBattlePlace then
-        r = GameEvents:WaitForChild(name, 0.5)
+    if not r then
+        pcall(function()
+            r = GameEvents:WaitForChild(name, 1)
+        end)
     end
     return r
 end
@@ -1377,10 +1386,12 @@ function Strix.Battle.HandleRuntimeVoteStart()
 end
 
 local function GetPlayerFolder()
+    local pf = workspace:FindFirstChild("PlayerFolder", true)
+    if pf then return pf end
     for _, ch in ipairs(workspace:GetChildren()) do
         if ch:IsA("Folder") or ch:IsA("Model") then
-            local pf = ch:FindFirstChild("PlayerFolder")
-            if pf then return pf end
+            local f = ch:FindFirstChild("PlayerFolder")
+            if f then return f end
         end
     end
     return nil
@@ -1396,21 +1407,52 @@ local function IsMyUnit(unit)
 end
 
 -- ==============================================================================
--- CUSTOM AUTOPLAY (DEPLOY FROM LEFT TO RIGHT, CONTINUOUS UNIT CAP CHECK)
+-- CUSTOM AUTOPLAY (DEPLOY LEFT TO RIGHT, CONSTANT UNIT CAP & REMAINING MONEY)
 -- ==============================================================================
 local slotCapCache = {}
-local lastCapCacheTime = 0
+local lastCapCacheTime = {}
 local lastDeployTimes = {}
+local slotCooldownEndTime = {}
+
+-- Auto-sync cooldowns directly from game event & reset on new wave/match
+pcall(function()
+    local ucs = UnitCooldownStart or SafeGetRemote("UnitCooldownStart")
+    if ucs then
+        ucs.OnClientEvent:Connect(function(slotIdx, duration)
+            if slotIdx and duration then
+                slotCooldownEndTime[slotIdx] = os.clock() + (tonumber(duration) or 0)
+            end
+        end)
+    end
+    local rst = ResetUnitUIEvent or SafeGetRemote("ResetUnitUIEvent")
+    if rst then
+        rst.OnClientEvent:Connect(function()
+            table.clear(slotCooldownEndTime)
+            table.clear(lastDeployTimes)
+            table.clear(slotCapCache)
+            table.clear(lastCapCacheTime)
+        end)
+    end
+end)
 
 local function GetCurrentBattleMoney()
+    local usc = ReplicatedStorage:FindFirstChild("Modules")
+        and ReplicatedStorage.Modules:FindFirstChild("Gameplay")
+        and ReplicatedStorage.Modules.Gameplay:FindFirstChild("UnitSlotController")
+    local nv = usc and usc:FindFirstChildOfClass("NumberValue")
+    if nv and type(nv.Value) == "number" then
+        return nv.Value
+    end
+
     local main = LocalPlayer and LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("Main")
     local fc = main and main:FindFirstChild("FrameController")
     local moneyLabel = fc and fc:FindFirstChild("MoneyLabel")
     if moneyLabel and moneyLabel:IsA("TextLabel") and moneyLabel.Visible then
-        local cur = string.match(moneyLabel.Text, "%d+")
-        if cur then
-            return tonumber(cur) or 0
-        end
+        local raw = moneyLabel.Text
+        local beforeSlash = string.match(raw, "([%d,%s]+)%s*/") or raw
+        local cleaned = string.gsub(beforeSlash, "[^%d]", "")
+        local num = tonumber(cleaned)
+        if num then return num end
     end
     return 0
 end
@@ -1428,43 +1470,82 @@ end
 local function GetSlotState(slotIndex)
     local slotGui = GetSlotGui(slotIndex)
     if not slotGui then
-        return false, true, 0, false, nil
+        return false, true, 0, nil
     end
 
     local empty = slotGui:FindFirstChild("Empty")
     if empty and empty.Visible == true then
-        return false, false, 0, false, slotGui
+        return false, false, 0, slotGui
     end
 
     local lock = slotGui:FindFirstChild("Lock")
     if lock and lock.Visible == true then
-        return false, true, 0, false, slotGui
+        return false, true, 0, slotGui
     end
 
     local moneyLabel = slotGui:FindFirstChild("Money")
     local cost = 0
     if moneyLabel and moneyLabel:IsA("TextLabel") then
-        local num = string.match(moneyLabel.Text, "%d+")
-        if num then
-            cost = tonumber(num) or 0
+        local cleaned = string.gsub(moneyLabel.Text, "[^%d]", "")
+        if cleaned ~= "" then
+            cost = tonumber(cleaned) or 0
         end
     end
 
-    local cdVal = slotGui:FindFirstChild("CooldownTimer")
-    local cdOverlay = slotGui:FindFirstChild("CooldownOverlay")
-    local onCooldown = false
-    if cdVal and cdVal:IsA("NumberValue") and cdVal.Value > 0.05 then
-        onCooldown = true
-    elseif cdOverlay and cdOverlay.Visible and cdOverlay.Size.Y.Scale > 0.05 then
-        onCooldown = true
+    if cost == 0 and UnitConfig and UnitConfig.GetUnitData then
+        local uuid = slotGui:GetAttribute("CurrentUUID")
+        if uuid and ReplicaController and ReplicaController._replicas then
+            for _, rep in pairs(ReplicaController._replicas) do
+                if rep.Class == "PlayerData" and rep.Data and rep.Data.Inventory then
+                    for _, item in pairs(rep.Data.Inventory) do
+                        if item.UUID == uuid then
+                            local base = UnitConfig.GetUnitData(item.UnitId or item.Id)
+                            if base and base.Cost then
+                                cost = base.Cost
+                            end
+                            break
+                        end
+                    end
+                end
+            end
+        end
     end
 
-    return true, false, cost, onCooldown, slotGui
+    return true, false, cost, slotGui
+end
+
+local function IsSlotOnCooldown(slotIndex, slotGui)
+    local now = os.clock()
+    if slotCooldownEndTime[slotIndex] and now < slotCooldownEndTime[slotIndex] then
+        return true
+    end
+
+    if not slotGui then
+        slotGui = GetSlotGui(slotIndex)
+    end
+    if slotGui then
+        local cdVal = slotGui:FindFirstChild("CooldownTimer")
+        if cdVal and cdVal:IsA("NumberValue") and cdVal.Value > 0.05 then
+            return true
+        end
+
+        local cdOverlay = slotGui:FindFirstChild("CooldownOverlay")
+        if cdOverlay and cdOverlay.Visible and cdOverlay.Size.Y.Scale > 0.02 then
+            return true
+        end
+
+        local cdText = slotGui:FindFirstChild("CooldownText")
+        if cdText and cdText.Visible and cdText.Text ~= "" and cdText.Text ~= "0s" and cdText.Text ~= "0.0s" then
+            return true
+        end
+    end
+
+    return false
 end
 
 local function GetSlotUnitCap(slotIndex)
     local now = os.clock()
-    if slotCapCache[slotIndex] and (now - lastCapCacheTime < 4) then
+    if slotCapCache[slotIndex] and ((now - (lastCapCacheTime[slotIndex] or 0)) < 2.5) then
         return slotCapCache[slotIndex]
     end
 
@@ -1494,10 +1575,10 @@ local function GetSlotUnitCap(slotIndex)
                         end
                         if unitItem then
                             if CalculateUnitsStats and CalculateUnitsStats.Calculate then
-                                local stats = CalculateUnitsStats.Calculate(unitItem)
-                                if stats and (stats.unitsCapp or stats.UnitCap) then
+                                local ok, stats = pcall(function() return CalculateUnitsStats.Calculate(unitItem) end)
+                                if ok and stats and (stats.unitsCapp or stats.UnitCap) then
                                     slotCapCache[slotIndex] = stats.unitsCapp or stats.UnitCap
-                                    lastCapCacheTime = now
+                                    lastCapCacheTime[slotIndex] = now
                                     return
                                 end
                             end
@@ -1505,7 +1586,7 @@ local function GetSlotUnitCap(slotIndex)
                                 local base = UnitConfig.GetUnitData(unitItem.UnitId or unitItem.Id)
                                 if base and base.UnitCap then
                                     slotCapCache[slotIndex] = base.UnitCap
-                                    lastCapCacheTime = now
+                                    lastCapCacheTime[slotIndex] = now
                                     return
                                 end
                             end
@@ -1531,7 +1612,7 @@ local function GetSlotUnitCap(slotIndex)
                         local base = UnitConfig.GetUnitData(unitId)
                         if base and base.UnitCap then
                             slotCapCache[slotIndex] = base.UnitCap
-                            lastCapCacheTime = now
+                            lastCapCacheTime[slotIndex] = now
                             return
                         end
                     end
@@ -1581,19 +1662,18 @@ end
 
 local function DeploySlotUnit(slotIndex, slotGui)
     local now = os.clock()
-    if lastDeployTimes[slotIndex] and (now - lastDeployTimes[slotIndex] < 0.3) then
+    if lastDeployTimes[slotIndex] and (now - lastDeployTimes[slotIndex] < 0.25) then
         return false
     end
     lastDeployTimes[slotIndex] = now
+    slotCooldownEndTime[slotIndex] = now + 1.0
 
     local reqRemote = SpawnUnitRequest or SafeGetRemote("SpawnUnitRequest") or (Remotes and Remotes:FindFirstChild("SpawnUnitRequest"))
     if reqRemote then
         pcall(function()
             reqRemote:FireServer(slotIndex)
         end)
-    end
-
-    if slotGui and slotGui:IsA("GuiButton") then
+    elseif slotGui and slotGui:IsA("GuiButton") then
         pcall(function()
             if firesignal then
                 firesignal(slotGui.MouseButton1Click)
@@ -1604,6 +1684,12 @@ local function DeploySlotUnit(slotIndex, slotGui)
             end
         end)
     end
+
+    pcall(function()
+        local sm = require(ReplicatedStorage.Modules.Sound.SoundManagers)
+        if sm and sm.BuyingSound then sm.BuyingSound() end
+    end)
+
     return true
 end
 
@@ -1615,11 +1701,12 @@ function Strix.Battle.HandleRuntimeAutoplay()
     local gameStarted = LocalPlayer:GetAttribute("GameStarted") or (currentWave and tonumber(currentWave) and tonumber(currentWave) > 0)
     if not gameStarted then return end
 
-    -- Keep game's native autoplay turned ON as before
+    -- Keep game's native autoplay turned ON
     pcall(function()
         local isAuto = LocalPlayer and LocalPlayer:GetAttribute("AutoPlay")
-        if not isAuto and ToggleAutoplay then
-            ToggleAutoplay:FireServer(true)
+        local tAuto = ToggleAutoplay or SafeGetRemote("ToggleAutoplay")
+        if not isAuto and tAuto then
+            tAuto:FireServer(true)
         end
     end)
 
@@ -1629,21 +1716,42 @@ function Strix.Battle.HandleRuntimeAutoplay()
     end
 
     local currentMoney = GetCurrentBattleMoney()
+    if currentMoney <= 0 then return end
 
-    -- Process in order: Left to Right (Slot 1 -> Slot 6)
+    -- Deploy order: Left to Right (Slot 1 -> Slot 6)
+    -- Continuous unit cap check. If left slot is on cooldown and money remains, deploy next slot immediately!
     for slotIndex = 1, 6 do
-        local isEquipped, isLocked, cost, onCooldown, slotGui = GetSlotState(slotIndex)
-        if isEquipped and not isLocked then
+        local isEquipped, isLocked, cost, slotGui = GetSlotState(slotIndex)
+        if isEquipped and not isLocked and cost > 0 then
             local currentCount = GetPlacedCountForSlot(slotIndex)
             local unitCap = GetSlotUnitCap(slotIndex)
 
             -- Constantly monitor unit cap max
             if currentCount < unitCap then
-                if not onCooldown and currentMoney >= cost and cost > 0 then
-                    DeploySlotUnit(slotIndex, slotGui)
-                    break
+                local onCooldown = IsSlotOnCooldown(slotIndex, slotGui)
+                if onCooldown then
+                    -- Left slot is on cooldown: do not block next slots, proceed to next slot if money remains!
+                else
+                    -- Eligible and not on cooldown: check money
+                    if currentMoney >= cost then
+                        local ok = DeploySlotUnit(slotIndex, slotGui)
+                        if ok then
+                            currentMoney = currentMoney - cost
+                            task.wait(0.12)
+                            -- If money ran out after this purchase, stop here
+                            if currentMoney <= 0 then
+                                break
+                            end
+                            -- Money still remains: loop continues immediately to next slot!
+                        end
+                    else
+                        -- Not enough money for this leftmost eligible slot yet.
+                        -- Maintain left-to-right priority by waiting for money to accumulate.
+                        break
+                    end
                 end
             end
+            -- If currentCount >= unitCap: slot is maxed out, loop moves to next slot to the right automatically.
         end
     end
 end
@@ -2104,7 +2212,7 @@ task.spawn(function()
                 Strix.Challenges.HandleAutoLeave()
             end
         end)
-        task.wait(0.5)
+        task.wait(0.25)
     end
 end)
 

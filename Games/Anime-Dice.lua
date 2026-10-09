@@ -1,5 +1,34 @@
 -- ==============================================================================
--- 0. PREVIOUS INSTANCE CLEANUP
+-- 0. GAME LOAD VERIFICATION
+-- ==============================================================================
+if not game:IsLoaded() then
+    game.Loaded:Wait()
+end
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+if not LocalPlayer then
+    repeat task.wait(0.1) until Players.LocalPlayer
+    LocalPlayer = Players.LocalPlayer
+end
+
+-- Wait for PlayerGui
+if not LocalPlayer:FindFirstChild("PlayerGui") then
+    LocalPlayer:WaitForChild("PlayerGui", 20)
+end
+
+-- Wait for Character & HumanoidRootPart
+if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+    pcall(function()
+        if not LocalPlayer.Character then
+            LocalPlayer.CharacterAdded:Wait()
+        end
+        LocalPlayer.Character:WaitForChild("HumanoidRootPart", 10)
+    end)
+end
+
+-- ==============================================================================
+-- 1. PREVIOUS INSTANCE CLEANUP
 -- ==============================================================================
 if getgenv().STRIX_HUB_CLEANUP then
     pcall(getgenv().STRIX_HUB_CLEANUP)

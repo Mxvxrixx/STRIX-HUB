@@ -1543,9 +1543,20 @@ local function IsSlotOnCooldown(slotIndex, slotGui)
     return false
 end
 
+local function IsUnitAlive(u)
+    if not (u and u:IsA("Model") and u.Parent) then return false end
+    if u:GetAttribute("IsDead") == true then return false end
+    local hp = u:GetAttribute("HP")
+    if hp and tonumber(hp) and tonumber(hp) <= 0 then return false end
+    local state = u:GetAttribute("CurrentState")
+    if state == "Dead" or state == "Died" or state == "Despawn" or state == "Despawned" then
+        return false
+    end
+    return true
+end
+
 local function GetSlotUnitCap(slotIndex)
-    local now = os.clock()
-    if slotCapCache[slotIndex] and ((now - (lastCapCacheTime[slotIndex] or 0)) < 2.5) then
+    if slotCapCache[slotIndex] and slotCapCache[slotIndex] > 0 then
         return slotCapCache[slotIndex]
     end
 
@@ -1578,7 +1589,6 @@ local function GetSlotUnitCap(slotIndex)
                                 local ok, stats = pcall(function() return CalculateUnitsStats.Calculate(unitItem) end)
                                 if ok and stats and (stats.unitsCapp or stats.UnitCap) then
                                     slotCapCache[slotIndex] = stats.unitsCapp or stats.UnitCap
-                                    lastCapCacheTime[slotIndex] = now
                                     return
                                 end
                             end
@@ -1586,7 +1596,6 @@ local function GetSlotUnitCap(slotIndex)
                                 local base = UnitConfig.GetUnitData(unitItem.UnitId or unitItem.Id)
                                 if base and base.UnitCap then
                                     slotCapCache[slotIndex] = base.UnitCap
-                                    lastCapCacheTime[slotIndex] = now
                                     return
                                 end
                             end
@@ -1597,7 +1606,7 @@ local function GetSlotUnitCap(slotIndex)
         end
     end)
 
-    if slotCapCache[slotIndex] then
+    if slotCapCache[slotIndex] and slotCapCache[slotIndex] > 0 then
         return slotCapCache[slotIndex]
     end
 
@@ -1612,7 +1621,6 @@ local function GetSlotUnitCap(slotIndex)
                         local base = UnitConfig.GetUnitData(unitId)
                         if base and base.UnitCap then
                             slotCapCache[slotIndex] = base.UnitCap
-                            lastCapCacheTime[slotIndex] = now
                             return
                         end
                     end
@@ -1633,7 +1641,7 @@ local function GetPlacedCountForSlot(slotIndex)
     local count = 0
 
     for _, u in ipairs(pf:GetChildren()) do
-        if u:IsA("Model") then
+        if u:IsA("Model") and IsUnitAlive(u) then
             local isMine = false
             local ownerId = u:GetAttribute("OwnerID") or u:GetAttribute("OwnerId") or u:GetAttribute("UserId")
             if ownerId then
@@ -1673,15 +1681,11 @@ local function DeploySlotUnit(slotIndex, slotGui)
         pcall(function()
             reqRemote:FireServer(slotIndex)
         end)
-    elseif slotGui and slotGui:IsA("GuiButton") then
+    end
+
+    if slotGui and slotGui:IsA("GuiButton") and firesignal then
         pcall(function()
-            if firesignal then
-                firesignal(slotGui.MouseButton1Click)
-            else
-                for _, c in ipairs(getconnections(slotGui.MouseButton1Click)) do
-                    c:Fire()
-                end
-            end
+            firesignal(slotGui.MouseButton1Click)
         end)
     end
 

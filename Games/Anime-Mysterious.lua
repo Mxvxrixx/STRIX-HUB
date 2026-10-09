@@ -103,6 +103,7 @@ local SummonRequest = SafeGetRemote("SummonRequest")
 local GetBannerInfo = SafeGetRemote("GetBannerInfo")
 local VoteStartRequest = SafeGetRemote("VoteStartRequest")
 local ToggleAutoplay = SafeGetRemote("ToggleAutoplay")
+local SpawnUnitRequest = SafeGetRemote("SpawnUnitRequest")
 local UpdateSetting = SafeGetRemote("UpdateSetting")
 
 -- Game Events (Safe non-blocking lookups)
@@ -135,6 +136,20 @@ end)()
 local UnitConfig = (function()
     local ok, res = pcall(function()
         return require(Modules.UnitConfig)
+    end)
+    return ok and res or nil
+end)()
+
+local CalculateUnitsStats = (function()
+    local ok, res = pcall(function()
+        return require(Modules.CalculateUnitsStats)
+    end)
+    return ok and res or nil
+end)()
+
+local ReplicaController = (function()
+    local ok, res = pcall(function()
+        return require(ReplicatedStorage.ReplicaLib.ReplicatedStorage.ReplicaController)
     end)
     return ok and res or nil
 end)()
@@ -1361,15 +1376,6 @@ function Strix.Battle.HandleRuntimeVoteStart()
     end)
 end
 
-function Strix.Battle.HandleRuntimeAutoplay()
-    pcall(function()
-        local isAuto = LocalPlayer and LocalPlayer:GetAttribute("AutoPlay")
-        if not isAuto then
-            ToggleAutoplay:FireServer(true)
-        end
-    end)
-end
-
 local function GetPlayerFolder()
     for _, ch in ipairs(workspace:GetChildren()) do
         if ch:IsA("Folder") or ch:IsA("Model") then
@@ -1387,6 +1393,259 @@ local function IsMyUnit(unit)
     local owner = unit:GetAttribute("Owner") or unit:GetAttribute("Player")
     if owner then return owner == LocalPlayer.Name end
     return true
+end
+
+-- ==============================================================================
+-- CUSTOM AUTOPLAY (DEPLOY FROM LEFT TO RIGHT, CONTINUOUS UNIT CAP CHECK)
+-- ==============================================================================
+local slotCapCache = {}
+local lastCapCacheTime = 0
+local lastDeployTimes = {}
+
+local function GetCurrentBattleMoney()
+    local main = LocalPlayer and LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("Main")
+    local fc = main and main:FindFirstChild("FrameController")
+    local moneyLabel = fc and fc:FindFirstChild("MoneyLabel")
+    if moneyLabel and moneyLabel:IsA("TextLabel") and moneyLabel.Visible then
+        local cur = string.match(moneyLabel.Text, "%d+")
+        if cur then
+            return tonumber(cur) or 0
+        end
+    end
+    return 0
+end
+
+local function GetSlotGui(slotIndex)
+    local main = LocalPlayer and LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("Main")
+    local fc = main and main:FindFirstChild("FrameController")
+    local unitsSlots = fc and fc:FindFirstChild("UnitsSlots")
+    if unitsSlots then
+        return unitsSlots:FindFirstChild("Slots" .. tostring(slotIndex))
+    end
+    return nil
+end
+
+local function GetSlotState(slotIndex)
+    local slotGui = GetSlotGui(slotIndex)
+    if not slotGui then
+        return false, true, 0, false, nil
+    end
+
+    local empty = slotGui:FindFirstChild("Empty")
+    if empty and empty.Visible == true then
+        return false, false, 0, false, slotGui
+    end
+
+    local lock = slotGui:FindFirstChild("Lock")
+    if lock and lock.Visible == true then
+        return false, true, 0, false, slotGui
+    end
+
+    local moneyLabel = slotGui:FindFirstChild("Money")
+    local cost = 0
+    if moneyLabel and moneyLabel:IsA("TextLabel") then
+        local num = string.match(moneyLabel.Text, "%d+")
+        if num then
+            cost = tonumber(num) or 0
+        end
+    end
+
+    local cdVal = slotGui:FindFirstChild("CooldownTimer")
+    local cdOverlay = slotGui:FindFirstChild("CooldownOverlay")
+    local onCooldown = false
+    if cdVal and cdVal:IsA("NumberValue") and cdVal.Value > 0.05 then
+        onCooldown = true
+    elseif cdOverlay and cdOverlay.Visible and cdOverlay.Size.Y.Scale > 0.05 then
+        onCooldown = true
+    end
+
+    return true, false, cost, onCooldown, slotGui
+end
+
+local function GetSlotUnitCap(slotIndex)
+    local now = os.clock()
+    if slotCapCache[slotIndex] and (now - lastCapCacheTime < 4) then
+        return slotCapCache[slotIndex]
+    end
+
+    -- 1. Query ReplicaController PlayerData
+    pcall(function()
+        local rc = ReplicaController
+        if not rc then
+            local repMod = ReplicatedStorage:FindFirstChild("ReplicaLib")
+                and ReplicatedStorage.ReplicaLib:FindFirstChild("ReplicatedStorage")
+                and ReplicatedStorage.ReplicaLib.ReplicatedStorage:FindFirstChild("ReplicaController")
+            if repMod then
+                rc = require(repMod)
+            end
+        end
+        if rc and rc._replicas then
+            for _, rep in pairs(rc._replicas) do
+                if rep.Class == "PlayerData" and rep.Data then
+                    local equipped = rep.Data.EquippedSlots
+                    local uuid = equipped and equipped[slotIndex]
+                    if uuid and rep.Data.Inventory then
+                        local unitItem = nil
+                        for _, item in pairs(rep.Data.Inventory) do
+                            if item.UUID == uuid then
+                                unitItem = item
+                                break
+                            end
+                        end
+                        if unitItem then
+                            if CalculateUnitsStats and CalculateUnitsStats.Calculate then
+                                local stats = CalculateUnitsStats.Calculate(unitItem)
+                                if stats and (stats.unitsCapp or stats.UnitCap) then
+                                    slotCapCache[slotIndex] = stats.unitsCapp or stats.UnitCap
+                                    lastCapCacheTime = now
+                                    return
+                                end
+                            end
+                            if UnitConfig and UnitConfig.GetUnitData then
+                                local base = UnitConfig.GetUnitData(unitItem.UnitId or unitItem.Id)
+                                if base and base.UnitCap then
+                                    slotCapCache[slotIndex] = base.UnitCap
+                                    lastCapCacheTime = now
+                                    return
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+
+    if slotCapCache[slotIndex] then
+        return slotCapCache[slotIndex]
+    end
+
+    -- 2. Fallback: inspect placed units in PlayerFolder
+    pcall(function()
+        local pf = GetPlayerFolder()
+        if pf and UnitConfig and UnitConfig.GetUnitData then
+            for _, u in ipairs(pf:GetChildren()) do
+                if IsMyUnit(u) and u:GetAttribute("SlotIndex") == slotIndex then
+                    local unitId = u:GetAttribute("UnitId")
+                    if unitId then
+                        local base = UnitConfig.GetUnitData(unitId)
+                        if base and base.UnitCap then
+                            slotCapCache[slotIndex] = base.UnitCap
+                            lastCapCacheTime = now
+                            return
+                        end
+                    end
+                end
+            end
+        end
+    end)
+
+    return slotCapCache[slotIndex] or 2
+end
+
+local function GetPlacedCountForSlot(slotIndex)
+    local pf = GetPlayerFolder()
+    if not pf then return 0 end
+
+    local myUserId = LocalPlayer.UserId
+    local myName = LocalPlayer.Name
+    local count = 0
+
+    for _, u in ipairs(pf:GetChildren()) do
+        if u:IsA("Model") then
+            local isMine = false
+            local ownerId = u:GetAttribute("OwnerID") or u:GetAttribute("OwnerId") or u:GetAttribute("UserId")
+            if ownerId then
+                isMine = (tonumber(ownerId) == myUserId)
+            else
+                local owner = u:GetAttribute("Owner") or u:GetAttribute("Player")
+                if owner then
+                    isMine = (owner == myName)
+                end
+            end
+
+            if isMine then
+                -- Clones/mirrors do not consume player's placement cap
+                local isClone = (u:GetAttribute("IsFreeClone") == true)
+                if not isClone then
+                    local sIdx = u:GetAttribute("SlotIndex")
+                    if sIdx and tonumber(sIdx) == slotIndex then
+                        count = count + 1
+                    end
+                end
+            end
+        end
+    end
+    return count
+end
+
+local function DeploySlotUnit(slotIndex, slotGui)
+    local now = os.clock()
+    if lastDeployTimes[slotIndex] and (now - lastDeployTimes[slotIndex] < 0.3) then
+        return false
+    end
+    lastDeployTimes[slotIndex] = now
+
+    local reqRemote = SpawnUnitRequest or SafeGetRemote("SpawnUnitRequest") or (Remotes and Remotes:FindFirstChild("SpawnUnitRequest"))
+    if reqRemote then
+        pcall(function()
+            reqRemote:FireServer(slotIndex)
+        end)
+    end
+
+    if slotGui and slotGui:IsA("GuiButton") then
+        pcall(function()
+            if firesignal then
+                firesignal(slotGui.MouseButton1Click)
+            else
+                for _, c in ipairs(getconnections(slotGui.MouseButton1Click)) do
+                    c:Fire()
+                end
+            end
+        end)
+    end
+    return true
+end
+
+function Strix.Battle.HandleRuntimeAutoplay()
+    if not isBattlePlace then return end
+
+    -- Check if game has started
+    local currentWave = workspace:GetAttribute("CurrentWave")
+    local gameStarted = LocalPlayer:GetAttribute("GameStarted") or (currentWave and tonumber(currentWave) and tonumber(currentWave) > 0)
+    if not gameStarted then return end
+
+    -- Keep game's native autoplay turned ON as before
+    pcall(function()
+        local isAuto = LocalPlayer and LocalPlayer:GetAttribute("AutoPlay")
+        if not isAuto and ToggleAutoplay then
+            ToggleAutoplay:FireServer(true)
+        end
+    end)
+
+    -- Pause deployment during active Sword Event so player focuses on sword solving
+    if workspace:GetAttribute("SwordEventActive") == true then
+        return
+    end
+
+    local currentMoney = GetCurrentBattleMoney()
+
+    -- Process in order: Left to Right (Slot 1 -> Slot 6)
+    for slotIndex = 1, 6 do
+        local isEquipped, isLocked, cost, onCooldown, slotGui = GetSlotState(slotIndex)
+        if isEquipped and not isLocked then
+            local currentCount = GetPlacedCountForSlot(slotIndex)
+            local unitCap = GetSlotUnitCap(slotIndex)
+
+            -- Constantly monitor unit cap max
+            if currentCount < unitCap then
+                if not onCooldown and currentMoney >= cost and cost > 0 then
+                    DeploySlotUnit(slotIndex, slotGui)
+                    break
+                end
+            end
+        end
+    end
 end
 
 local function GetSimulatedTime()

@@ -1,4 +1,3 @@
-task.wait(10) 
 -- ==============================================================================
 -- 0. PREVIOUS INSTANCE CLEANUP
 -- ==============================================================================
@@ -1545,7 +1544,31 @@ local isMobileDevice = UserInputService.TouchEnabled or (vpInit.Y < 600)
 local defaultWinWidth = isMobileDevice and 780 or (tonumber(Config.WindowWidth) or 1000)
 local defaultWinHeight = isMobileDevice and 500 or (tonumber(Config.WindowHeight) or 650)
 
-local MacLib = loadstring(game:HttpGet("https://github.com/biggaboy212/Maclib/releases/latest/download/maclib.txt"))()
+-- Load & Patch Maclib Library (Fixes Dropdown selection display & responsive sizing)
+local rawMaclibSource = game:HttpGet("https://github.com/biggaboy212/Maclib/releases/latest/download/maclib.txt")
+
+-- Patch 1: Prevent Toggle(option, false) from clearing the active single-select value
+if rawMaclibSource:find("Selected = {}\r\n\t\t\t\t\t\t\tend") then
+    rawMaclibSource = rawMaclibSource:gsub("Selected = {}\r\n\t\t\t\t\t\t\tend", "if Selected[1] == optionName then Selected = {} end\r\n\t\t\t\t\t\t\tend", 1)
+elseif rawMaclibSource:find("Selected = {}\n\t\t\t\t\t\t\tend") then
+    rawMaclibSource = rawMaclibSource:gsub("Selected = {}\n\t\t\t\t\t\t\tend", "if Selected[1] == optionName then Selected = {} end\n\t\t\t\t\t\t\tend", 1)
+end
+
+-- Patch 2: Allow Dropdown Settings.Default to match string option values, numbers, or tables
+local replDefault = "isSelected = (DropdownFunctions.Settings.Default == i or DropdownFunctions.Settings.Default == v or (type(DropdownFunctions.Settings.Default) == 'table' and DropdownFunctions.Settings.Default[1] == v)) and true or false"
+rawMaclibSource = rawMaclibSource:gsub("isSelected = %(DropdownFunctions%.Settings%.Default == i%) and true or false", replDefault)
+
+-- Patch 3: Responsive Content sizing (prevent double-scale gap between sidebar and content)
+rawMaclibSource = rawMaclibSource:gsub(
+    "content%.Size = UDim2%.new%(0, %(base%.AbsoluteSize%.X %- sidebar%.AbsoluteSize%.X%), 1, 0%)",
+    "content.Size = UDim2.new(1 - sidebar.Size.X.Scale, -sidebar.Size.X.Offset, 1, 0)"
+)
+rawMaclibSource = rawMaclibSource:gsub(
+    "content%.Size = UDim2%.new%(0, base%.AbsoluteSize%.X %- newSidebarWidth, 1, 0%)",
+    "content.Size = UDim2.new(1, -newSidebarWidth, 1, 0)"
+)
+
+local MacLib = loadstring(rawMaclibSource)()
 
 local Window = MacLib:Window({
     Title = "STRIX HUB",
@@ -1827,6 +1850,18 @@ ApplyResponsiveWindow = function(targetBase)
         local h = tonumber(Config.WindowHeight) or 650
         targetBase.Size = UDim2.fromOffset(w, h)
     end
+
+    local content = targetBase:FindFirstChild("Content")
+    local sidebar = targetBase:FindFirstChild("Sidebar")
+    if content and sidebar then
+        local scaleX = sidebar.Size.X.Scale
+        local offsetX = sidebar.Size.X.Offset
+        if scaleX > 0 or offsetX > 0 then
+            content.Size = UDim2.new(1 - scaleX, -offsetX, 1, 0)
+        else
+            content.Size = UDim2.new(0.675, 0, 1, 0)
+        end
+    end
 end
 
 task.spawn(function()
@@ -1915,12 +1950,26 @@ task.spawn(function()
                 cleanExit.Activated:Connect(doExit)
             end
 
-            -- Keep content size synced with dynamic base resizing
-            base:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+            -- Keep content size synced seamlessly with sidebar without double-scaling gaps
+            local function syncContentSize()
                 if content and sidebar then
-                    content.Size = UDim2.new(0, base.AbsoluteSize.X - sidebar.AbsoluteSize.X, 1, 0)
+                    local scaleX = sidebar.Size.X.Scale
+                    local offsetX = sidebar.Size.X.Offset
+                    if scaleX > 0 or offsetX > 0 then
+                        content.Size = UDim2.new(1 - scaleX, -offsetX, 1, 0)
+                    else
+                        local s = base:FindFirstChild("BaseUIScale")
+                        local currentScale = (s and s.Scale > 0.05) and s.Scale or 1.0
+                        local unscaledBaseW = base.AbsoluteSize.X / currentScale
+                        local unscaledSideW = sidebar.AbsoluteSize.X / currentScale
+                        content.Size = UDim2.new(0, math.max(100, unscaledBaseW - unscaledSideW), 1, 0)
+                    end
                 end
-            end)
+            end
+
+            base:GetPropertyChangedSignal("AbsoluteSize"):Connect(syncContentSize)
+            sidebar:GetPropertyChangedSignal("Size"):Connect(syncContentSize)
+            syncContentSize()
 
             -- Green Button (Maximize / Restore)
             local maxBtn = base:FindFirstChild("Maximize", true)

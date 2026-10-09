@@ -2384,12 +2384,12 @@ end)
 local TabGroup = Window:TabGroup()
 
 local Tabs = {
-    Battle = TabGroup:Tab({ Name = "Auto Create", Image = "rbxassetid://10709782230" }),
-    Challenge = TabGroup:Tab({ Name = "Challenges", Image = "rbxassetid://10734975692" }),
-    Gameplay = TabGroup:Tab({ Name = "Gameplay", Image = "rbxassetid://10723345518" }),
-    Progression = TabGroup:Tab({ Name = "Rewards", Image = "rbxassetid://10747363465" }),
-    Shop = TabGroup:Tab({ Name = "Summon & Shop", Image = "rbxassetid://10723407389" }),
-    Settings = TabGroup:Tab({ Name = "Settings", Image = "rbxassetid://10734950309" })
+    Battle = TabGroup:Tab({ Name = "Auto Create", Image = "rbxassetid://10709782230" }), -- lucide-bot
+    Challenge = TabGroup:Tab({ Name = "Challenges", Image = "rbxassetid://10734975692" }), -- lucide-swords
+    Gameplay = TabGroup:Tab({ Name = "Gameplay", Image = "rbxassetid://10723395215" }), -- lucide-gamepad-2
+    Progression = TabGroup:Tab({ Name = "Rewards", Image = "rbxassetid://10723396402" }), -- lucide-gift
+    Shop = TabGroup:Tab({ Name = "Summon & Shop", Image = "rbxassetid://10734952479" }), -- lucide-shopping-cart
+    Settings = TabGroup:Tab({ Name = "Settings", Image = "rbxassetid://10734950309" }) -- lucide-settings
 }
 
 -- ------------------------------------------------------------------------------

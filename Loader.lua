@@ -35,6 +35,11 @@ local Games = {
         ScriptPath = "Games/Anime-Mysterious.lua",
         PlaceIds   = { 117949143041402 },
     },
+
+        ["Anime Mysterious"] = {
+        ScriptPath = "Games/Anime-Mysterious.lua",
+        PlaceIds   = { 107610426295102 },
+    },
 }
 
 local currentPlaceId = game.PlaceId

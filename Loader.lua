@@ -1,3 +1,7 @@
+-- ==============================================================================
+--  STRIX HUB - Universal Multi-Game Loader
+-- ==============================================================================
+-- 1. Wait for game to fully load
 if not game:IsLoaded() then
     game.Loaded:Wait()
 end
@@ -14,6 +18,9 @@ local function Notify(title, text, duration)
     end)
 end
 
+-- ==============================================================================
+-- 2. Repository Configuration
+-- ==============================================================================
 local GITHUB_USER   = "Mxvxrixx"
 local GITHUB_REPO   = "STRIX-HUB"
 local GITHUB_BRANCH = "main"
@@ -25,6 +32,9 @@ local BASE_URL = string.format(
     GITHUB_BRANCH
 )
 
+-- ==============================================================================
+-- 3. Game Database (จับคู่ตาม PlaceId)
+-- ==============================================================================
 local Games = {
     ["Anime Dice"] = {
         ScriptPath = "Games/Anime-Dice.lua",
@@ -36,12 +46,15 @@ local Games = {
         PlaceIds   = { 117949143041402 },
     },
 
-        ["Anime Mysterious"] = {
+    ["Anime Mysterious"] = {
         ScriptPath = "Games/Anime-Mysterious.lua",
         PlaceIds   = { 107610426295102 },
     },
 }
 
+-- ==============================================================================
+-- 4. Game Detection Logic
+-- ==============================================================================
 local currentPlaceId = game.PlaceId
 
 local matchedGameName = nil
@@ -63,6 +76,9 @@ for name, data in pairs(Games) do
     end
 end
 
+-- ==============================================================================
+-- 5. Execution
+-- ==============================================================================
 if matchedGameName and targetScriptPath then
     Notify("STRIX HUB", "กำลังโหลดสคริปต์: " .. matchedGameName .. "...", 3)
 
@@ -91,6 +107,7 @@ if matchedGameName and targetScriptPath then
         Notify("STRIX HUB Error", "ไม่สามารถดาวน์โหลดสคริปต์ได้ ตรวจสอบ URL หรืออินเทอร์เน็ต", 6)
     end
 else
+    -- กรณีเกมยังไม่รองรับ
     local notSupportedMsg = string.format("ไม่รองรับเกมนี้ (PlaceId: %d)", currentPlaceId)
     warn("[STRIX HUB] " .. notSupportedMsg)
     Notify("STRIX HUB", notSupportedMsg, 6)

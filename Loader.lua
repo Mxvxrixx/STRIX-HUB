@@ -43,12 +43,11 @@ local Games = {
 
     ["Anime Mysterious"] = {
         ScriptPath = "Games/Anime-Mysterious.lua",
-        PlaceIds   = { 117949143041402 },
-    },
-
-    ["Anime Mysterious"] = {
-        ScriptPath = "Games/Anime-Mysterious.lua",
-        PlaceIds   = { 107610426295102 },
+        PlaceIds   = {
+            117949143041402, -- Lobby
+            107610426295102, -- Gameplay
+            110388679506690, -- Lobby Alt
+        },
     },
 }
 

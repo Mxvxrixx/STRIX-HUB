@@ -183,13 +183,35 @@ end)()
 
 -- Active Codes Database
 local ActiveCodes = {
+    "UPDATE05",
+    "FATESTAYNIGHT",
+    "GILGAMESH",
     "THANKSFOR10KCCU",
     "THANKSFOR9000CCU",
     "THANKSFOR8000CCU",
+    "THANKSFOR7000CCU",
+    "THANKSFOR6000CCU",
+    "5KCCU",
+    "WORLDISALWAYSLEEP",
+    "SRYFORBUGSANDFIXBALANCE",
+    "SRYFORRESTART2",
+    "THANKSFOR20KMEMBERDISCORD",
+    "THANKSFOR1800CCU",
     "THANKSFOR3MVISIT",
     "THANKSFOR2MVISIT",
+    "THANKS800CCUAND3KMEMBERS",
+    "ANIMEMYSTERIOUS",
+    "THANKSFOR1000CCU",
+    "FULLRELEASE",
+    "500KVISIT",
+    "SRYFORBUGS",
+    "SRYFORBUGS2",
+    "THANKS600CCU",
     "THANKSFOR1MVITS",
-    "THANKSFOR20KMEMBERDISCORD",
+    "SRYFORRESTART",
+    "THANKFORSUPPORT",
+    "RELEASE",
+    "THANKSFOR400KVISIT",
     "CC1"
 }
 
@@ -217,8 +239,9 @@ local StoryDatabase = {
     ["Kirigakure Village"] = { Name = "Kirigakure Village", Mode = "Story", MapToCreate = "KirigakureVillage", TotalStages = 5, Difficulties = { "Normal", "Hard", "Nightmare" } },
     ["Cursed Mall"] = { Name = "Cursed Mall", Mode = "Story", MapToCreate = "CursedMall", TotalStages = 5, Difficulties = { "Normal", "Hard", "Nightmare" } },
     ["Valhalla Arena"] = { Name = "Valhalla Arena", Mode = "Story", MapToCreate = "ValhallaArena", TotalStages = 5, Difficulties = { "Normal", "Hard", "Nightmare" } },
+    ["Fate Story"] = { Name = "Fate Story", Mode = "Story", MapToCreate = "FateStory", TotalStages = 5, Difficulties = { "Normal", "Hard", "Nightmare" } },
 }
-local StoryMapOptions = { "Namek World", "Kirigakure Village", "Cursed Mall", "Valhalla Arena" }
+local StoryMapOptions = { "Namek World", "Kirigakure Village", "Cursed Mall", "Valhalla Arena", "Fate Story" }
 local StoryStageOptions = { "1", "2", "3", "4", "5" }
 
 local MysteriosDatabase = {
@@ -226,21 +249,23 @@ local MysteriosDatabase = {
     ["Kirigakure Village"] = { Name = "Kirigakure Village", Mode = "Mysterios", MapToCreate = "KirigakureVillageMyterious", TotalStages = 3, Difficulties = { "Normal", "Hard", "Nightmare" } },
     ["Cursed Mall"] = { Name = "Cursed Mall", Mode = "Mysterios", MapToCreate = "CursedMallMyterious", TotalStages = 3, Difficulties = { "Normal", "Hard", "Nightmare" } },
     ["Valhalla Arena"] = { Name = "Valhalla Arena", Mode = "Mysterios", MapToCreate = "ValhallaArenaMyterious", TotalStages = 3, Difficulties = { "Normal", "Hard", "Nightmare" } },
+    ["Fate Story Mysterious"] = { Name = "Fate Story Mysterious", Mode = "Mysterios", MapToCreate = "FateStoryMysterious", TotalStages = 3, Difficulties = { "Normal", "Hard", "Nightmare" } },
 }
-local MysteriosMapOptions = { "Namek World", "Kirigakure Village", "Cursed Mall", "Valhalla Arena" }
+local MysteriosMapOptions = { "Namek World", "Kirigakure Village", "Cursed Mall", "Valhalla Arena", "Fate Story Mysterious" }
 local MysteriosStageOptions = { "1", "2", "3" }
 
 local RaidsDatabase = {
     ["Alabasta Arc"] = { Name = "Alabasta Arc", Mode = "Raids", MapToCreate = "AlabastaArc", TotalStages = 3, Difficulties = { "Normal", "Hard", "Nightmare" } },
     ["Scepter Tower"] = { Name = "Scepter Tower", Mode = "Raids", MapToCreate = "ScepterTower", TotalStages = 3, Difficulties = { "Normal", "Hard", "Nightmare" } },
+    ["Tokyo Jujutsu High"] = { Name = "Tokyo Jujutsu High", Mode = "Raids", MapToCreate = "CursedAcademy", TotalStages = 3, Difficulties = { "Normal", "Hard", "Nightmare" } },
 }
-local RaidsMapOptions = { "Alabasta Arc", "Scepter Tower" }
+local RaidsMapOptions = { "Alabasta Arc", "Scepter Tower", "Tokyo Jujutsu High" }
 local RaidsStageOptions = { "1", "2", "3" }
 
 local BossDatabase = {
-    ["Tokyo Jujutsu High"] = { Name = "Tokyo Jujutsu High (Event)", Mode = "Event", MapToCreate = "CursedAcademy", TotalStages = 1, Difficulties = { "Normal", "Hard", "Nightmare" } },
+    ["Fate (Event)"] = { Name = "Fate (Event)", Mode = "Event", MapToCreate = "FateEvent", TotalStages = 1, Difficulties = { "Normal", "Hard", "Nightmare" } },
 }
-local BossMapOptions = { "Tokyo Jujutsu High" }
+local BossMapOptions = { "Fate (Event)" }
 local BossStageOptions = { "1" }
 local BossDifficultyOptions = { "Normal", "Hard", "Nightmare" }
 local StandardDifficultyOptions = { "Normal", "Hard", "Nightmare" }
@@ -269,7 +294,7 @@ local Config = {
 
     -- 4. Boss Event Mode
     AutoCreateBoss = false,
-    BossMap = "Tokyo Jujutsu High",
+    BossMap = "Fate (Event)",
     BossStage = "1",
     BossDifficulty = "Normal",
 
@@ -300,6 +325,7 @@ local Config = {
 
     -- Summon
     AutoSummon = false,
+    SummonBanner = "Standard (Gems)", -- "Standard (Gems)", "Fate (Fate Coins)"
     SummonCount = "10x", -- "1x", "10x"
     SummonDelay = 1.5,
 
@@ -730,8 +756,8 @@ function Strix.Matchmaking.CreateRaidsMatch()
 end
 
 function Strix.Matchmaking.CreateBossMatch()
-    local entry = BossDatabase[Config.BossMap] or BossDatabase["Tokyo Jujutsu High"]
-    return Strix.Matchmaking.CreateMatchDirect(entry, Config.BossStage or "1", Config.BossDifficulty or "Normal")
+    local entry = BossDatabase[Config.BossMap] or BossDatabase["Fate (Event)"]
+    return Strix.Matchmaking.CreateMatchDirect(entry, "1", Config.BossDifficulty or "Normal")
 end
 
 function Strix.Matchmaking.CancelMatch()
@@ -1017,15 +1043,19 @@ end
 -- 4, 6, 7: Progression Engine (Codes, Level Rewards, Unit Index)
 -- ------------------------------------------------------------------------------
 function Strix.Progression.RedeemAllCodes()
+    local repData = Strix.GetReplicaData()
+    local usedCodes = (repData and repData.UsedCodes) or {}
     local count = 0
     for _, code in ipairs(ActiveCodes) do
-        pcall(function()
-            local ok = RedeemCode:InvokeServer(code)
-            if ok then
-                count = count + 1
-            end
-        end)
-        task.wait(0.25)
+        if not usedCodes[code] and not usedCodes[string.upper(code)] then
+            pcall(function()
+                local ok = RedeemCode:InvokeServer(code)
+                if ok then
+                    count = count + 1
+                end
+            end)
+            task.wait(0.25)
+        end
     end
     return count
 end
@@ -1201,8 +1231,23 @@ end
 -- ------------------------------------------------------------------------------
 -- 9: Summon Engine
 -- ------------------------------------------------------------------------------
-function Strix.Summon.PerformSummon(count)
+function Strix.Summon.PerformSummon(count, bannerType)
     local amt = (count == "1x" or count == 1) and 1 or 10
+    local banner = "Standard"
+    local rawBanner = bannerType or Config.SummonBanner
+    if rawBanner and string.find(string.lower(tostring(rawBanner)), "fate") then
+        banner = "Fate"
+    else
+        banner = "Standard"
+    end
+
+    pcall(function()
+        local sc = require(ReplicatedStorage.Modules.SummonController)
+        if sc and sc.ActiveInstance and sc.ActiveInstance.SwitchBanner then
+            sc.ActiveInstance:SwitchBanner(banner)
+        end
+    end)
+
     local autoSell = {
         Common = false,
         Rare = false,
@@ -1213,7 +1258,7 @@ function Strix.Summon.PerformSummon(count)
         Legendary_Shiny = false
     }
     local ok, res1, res2 = pcall(function()
-        return SummonRequest:InvokeServer(amt, autoSell)
+        return SummonRequest:InvokeServer(amt, autoSell, banner)
     end)
     return ok and res1, res2
 end
@@ -1265,6 +1310,7 @@ function Strix.Battle.SyncSettings()
     Strix.Battle.SetGameSetting("AutoRetry", allowNextRetry and (Config.AutoRetry == true) or false)
     Strix.Battle.SetGameSetting("AutoNext", allowNextRetry and (Config.AutoNext == true) or false)
     Strix.Battle.SetGameSetting("Autoplay", Config.AutoAutoplay == true)
+    Strix.Battle.SetGameSetting("AutoUltimate", Config.AutoUltimateSkill == true)
 end
 
 function Strix.Battle.HandleRuntimeVoteStart()
@@ -1333,22 +1379,25 @@ local function CanUseUltimate(unit)
 end
 
 function Strix.Battle.HandleAutoUltimateSkill()
+    -- 1. Continuous sync to game's built-in SettingModule & Server
+    Strix.Battle.SetGameSetting("AutoUltimate", Config.AutoUltimateSkill == true)
+
+    -- 2. Sync placed units AutoUltimate state to game server if present
     pcall(function()
         local folder = GetPlayerFolder()
-        local ultEvent = SafeGetGameEvent("UseUltimateEvent") or (GameEvents and GameEvents:FindFirstChild("UseUltimateEvent"))
-        if not folder or not ultEvent then return end
+        local toggleRemote = SafeGetGameEvent("ToggleAutoUltimateRequest") or (GameEvents and GameEvents:FindFirstChild("ToggleAutoUltimateRequest"))
+        if not folder then return end
 
-        local used_ids = {}
+        local targetState = (Config.AutoUltimateSkill == true)
         for _, unit in ipairs(folder:GetChildren()) do
-            local unit_id = unit:GetAttribute("UnitId")
-            if not unit_id or used_ids[unit_id] or not CanUseUltimate(unit) then continue end
-
-            local now = os.clock()
-            if now - (last_ultimate_use[unit_id] or 0) < 0.5 then continue end
-
-            used_ids[unit_id] = true
-            last_ultimate_use[unit_id] = now
-            ultEvent:FireServer(unit)
+            if IsMyUnit(unit) then
+                if unit:GetAttribute("AutoUltimate") ~= targetState then
+                    unit:SetAttribute("AutoUltimate", targetState)
+                    if toggleRemote then
+                        toggleRemote:FireServer(unit, targetState)
+                    end
+                end
+            end
         end
     end)
 end
@@ -1682,7 +1731,7 @@ task.spawn(function()
     while getgenv().STRIX_HUB_LOADED do
         if not isBattlePlace and Config.AutoSummon then
             pcall(function()
-                Strix.Summon.PerformSummon(Config.SummonCount)
+                Strix.Summon.PerformSummon(Config.SummonCount, Config.SummonBanner)
             end)
             task.wait(tonumber(Config.SummonDelay) or 1.5)
         else
@@ -1798,6 +1847,7 @@ local function ApplyConfigToUI()
 
     -- Challenges & Others
     safeUpdateDropdown(UIControls.SelectedChallengeTab, Config.SelectedChallenges or { "Weekly" })
+    safeUpdateDropdown(UIControls.SummonBanner, Config.SummonBanner or "Standard (Gems)")
     safeUpdateDropdown(UIControls.SummonCount, Config.SummonCount)
     safeUpdateDropdown(UIControls.SelectedGoldItems, Config.SelectedGoldItems or {})
     safeUpdateDropdown(UIControls.SelectedGemsItems, Config.SelectedGemsItems or {})
@@ -2714,14 +2764,18 @@ UIControls.BossMap = BattleRight:Dropdown({
     Multi = false,
     Required = true,
     Options = BossMapOptions,
-    Default = Config.BossMap or "Tokyo Jujutsu High",
+    Default = Config.BossMap or "Fate (Event)",
     Callback = function(chosen)
         local val = type(chosen) == "table" and chosen[1] or chosen
         if val then
             Config.BossMap = val
+            Config.BossStage = "1"
+            if UIControls.BossStage and UIControls.BossStage.UpdateSelection then
+                UIControls.BossStage:UpdateSelection("1")
+            end
             local entry = BossDatabase[val]
             if entry then
-                local ok, reason = Strix.Matchmaking.ValidateMapAndStage(entry.MapToCreate, "1", "Event")
+                local ok, reason = Strix.Matchmaking.ValidateMapAndStage(entry.MapToCreate, "1", entry.Mode or "Event")
             end
             RequestSaveConfig()
         end
@@ -2733,11 +2787,11 @@ UIControls.BossStage = BattleRight:Dropdown({
     Multi = false,
     Required = true,
     Options = BossStageOptions,
-    Default = tostring(Config.BossStage or "1"),
+    Default = "1",
     Callback = function(chosen)
         local val = type(chosen) == "table" and chosen[1] or chosen
         if val then
-            Config.BossStage = tostring(val)
+            Config.BossStage = "1"
             RequestSaveConfig()
         end
     end
@@ -2888,10 +2942,11 @@ UIControls.AutoAutoplay = GameLeft:Toggle({
 }, "Toggle_AutoAutoplay")
 
 UIControls.AutoUltimateSkill = GameLeft:Toggle({
-    Name = "Auto Ultimate / Skill",
+    Name = "Auto Ultimate",
     Default = (Config.AutoUltimateSkill ~= false),
     Callback = function(v)
         Config.AutoUltimateSkill = v
+        Strix.Battle.SetGameSetting("AutoUltimate", v)
         RequestSaveConfig()
     end
 }, "Toggle_AutoUltimateSkill")
@@ -2988,6 +3043,21 @@ UIControls.AutoSummon = ShopLeft:Toggle({
     end
 }, "Toggle_AutoSummon")
 
+UIControls.SummonBanner = ShopLeft:Dropdown({
+    Name = "Select Banner",
+    Multi = false,
+    Required = true,
+    Options = { "Standard (Gems)", "Fate (Fate Coins)" },
+    Default = Config.SummonBanner or "Standard (Gems)",
+    Callback = function(chosen)
+        local val = type(chosen) == "table" and chosen[1] or chosen
+        if val then
+            Config.SummonBanner = val
+            RequestSaveConfig()
+        end
+    end
+}, "Dropdown_SummonBanner")
+
 UIControls.SummonCount = ShopLeft:Dropdown({
     Name = "Summon Amount",
     Multi = false,
@@ -3020,7 +3090,7 @@ UIControls.SummonDelay = ShopLeft:Slider({
 ShopLeft:Button({
     Name = "Perform 10x Summon Once",
     Callback = function()
-        Strix.Summon.PerformSummon("10x")
+        Strix.Summon.PerformSummon("10x", Config.SummonBanner)
     end
 }, "Btn_SummonOnce")
 

@@ -1,9 +1,14 @@
 -- ==============================================================================
 --  STRIX HUB - Universal Multi-Game Loader
 -- ==============================================================================
--- 1. Wait for game to fully load
+-- 1. Wait for game and engine DataModel to fully initialize (No infinite yield)
 if not game:IsLoaded() then
-    game.Loaded:Wait()
+    repeat task.wait(0.1) until game:IsLoaded()
+end
+
+-- Wait until PlaceId is resolved (Prevents PlaceId == 0 during early auto-execute)
+if not game.PlaceId or game.PlaceId == 0 then
+    repeat task.wait(0.1) until game.PlaceId and game.PlaceId > 0
 end
 
 local Players = game:GetService("Players")
@@ -95,9 +100,16 @@ if matchedGameName and targetScriptPath then
     local scriptUrl = BASE_URL .. targetScriptPath
     print("[STRIX HUB] Fetching: " .. scriptUrl)
 
-    local success, scriptContent = pcall(function()
-        return game:HttpGet(scriptUrl)
-    end)
+    local success, scriptContent = false, nil
+    for attempt = 1, 3 do
+        success, scriptContent = pcall(function()
+            return game:HttpGet(scriptUrl)
+        end)
+        if success and scriptContent and #scriptContent > 0 then
+            break
+        end
+        task.wait(0.5)
+    end
 
     if success and scriptContent and #scriptContent > 0 then
         local runSuccess, runError = pcall(function()

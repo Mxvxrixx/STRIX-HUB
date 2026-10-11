@@ -1,12 +1,27 @@
 -- ==============================================================================
+-- 1. Notification Helper (แก้ปัญหาแครชจาก Notify nil)
+-- ==============================================================================
+local StarterGui = game:GetService("StarterGui")
+local function Notify(title, text, duration)
+    pcall(function()
+        StarterGui:SetCore("SendNotification", {
+            Title = title or "STRIX HUB",
+            Text = text or "",
+            Duration = duration or 5
+        })
+    end)
+end
+
+-- ==============================================================================
 -- 2. Repository Configuration
 -- ==============================================================================
 local GITHUB_USER   = "Mxvxrixx"
 local GITHUB_REPO   = "STRIX-HUB"
 local GITHUB_BRANCH = "main"
 
+-- ใช้ URL ตรงไม่ผ่าน refs/heads เพื่อความเสถียร
 local BASE_URL = string.format(
-    "https://raw.githubusercontent.com/%s/%s/refs/heads/%s/",
+    "https://raw.githubusercontent.com/%s/%s/%s/",
     GITHUB_USER,
     GITHUB_REPO,
     GITHUB_BRANCH
@@ -61,7 +76,8 @@ end
 if matchedGameName and targetScriptPath then
     Notify("STRIX HUB", "กำลังโหลดสคริปต์: " .. matchedGameName .. "...", 3)
 
-    local scriptUrl = BASE_URL .. targetScriptPath
+    -- ใส่ ?t= เพื่อป้องกันไม่ให้ Executor ติด Cache เก่า
+    local scriptUrl = BASE_URL .. targetScriptPath .. "?t=" .. tick()
     print("[STRIX HUB] Fetching: " .. scriptUrl)
 
     local success, scriptContent = false, nil
@@ -93,7 +109,6 @@ if matchedGameName and targetScriptPath then
         Notify("STRIX HUB Error", "ไม่สามารถดาวน์โหลดสคริปต์ได้ ตรวจสอบ URL หรืออินเทอร์เน็ต", 6)
     end
 else
-    -- กรณีเกมยังไม่รองรับ
     local notSupportedMsg = string.format("ไม่รองรับเกมนี้ (PlaceId: %d)", currentPlaceId)
     warn("[STRIX HUB] " .. notSupportedMsg)
     Notify("STRIX HUB", notSupportedMsg, 6)

@@ -1,5 +1,32 @@
 -- ==============================================================================
--- 1. Notification Helper (แก้ปัญหาแครชจาก Notify nil)
+--  STRIX HUB - Universal Multi-Game Loader
+-- ==============================================================================
+
+-- ==============================================================================
+-- 0. Auto-Execute & Game Load Verification (แก้ปัญหา Auto Execute ไม่ติด)
+-- ==============================================================================
+if not game:IsLoaded() then
+    repeat task.wait(0.2) until game:IsLoaded()
+end
+
+-- รอจนกว่า PlaceId จะถูกเซ็ตจริง (ตอน Auto Execute ช่วงแรก game.PlaceId จะเป็น 0)
+while not game.PlaceId or game.PlaceId == 0 do
+    task.wait(0.2)
+end
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+while not LocalPlayer do
+    task.wait(0.2)
+    LocalPlayer = Players.LocalPlayer
+end
+
+if not LocalPlayer:FindFirstChild("PlayerGui") then
+    LocalPlayer:WaitForChild("PlayerGui", 20)
+end
+
+-- ==============================================================================
+-- 1. Notification Helper
 -- ==============================================================================
 local StarterGui = game:GetService("StarterGui")
 local function Notify(title, text, duration)
@@ -19,7 +46,6 @@ local GITHUB_USER   = "Mxvxrixx"
 local GITHUB_REPO   = "STRIX-HUB"
 local GITHUB_BRANCH = "main"
 
--- ใช้ URL ตรงไม่ผ่าน refs/heads เพื่อความเสถียร
 local BASE_URL = string.format(
     "https://raw.githubusercontent.com/%s/%s/%s/",
     GITHUB_USER,
@@ -76,7 +102,7 @@ end
 if matchedGameName and targetScriptPath then
     Notify("STRIX HUB", "กำลังโหลดสคริปต์: " .. matchedGameName .. "...", 3)
 
-    -- ใส่ ?t= เพื่อป้องกันไม่ให้ Executor ติด Cache เก่า
+    -- ใส่ ?t= เพื่อป้องกัน Executor แคชสคริปต์เก่า
     local scriptUrl = BASE_URL .. targetScriptPath .. "?t=" .. tick()
     print("[STRIX HUB] Fetching: " .. scriptUrl)
 
